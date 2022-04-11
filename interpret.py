@@ -6,15 +6,40 @@ import xml.etree.ElementTree as et
 # classes
 class Argument:
     def __init__(self, arg_type, arg_value):
-        self.type = arg_type
-        self.value = arg_value
+        self.type = arg_type                # var, int, string, nil
+        self.value = arg_value              # for type 'var' contains name of variable, for others contains value
+
+    def in_global_frame(self):
+        return self.value in program.global_frame
+
+    def in_local_frames(self):
+        if len(program.local_frames) == 0:
+            return False
+
+        frame = program.local_frames.pop()
+
+        if self.value in frame:
+            program.local_frames.append(frame)
+            return True
+
+        program.local_frames.append(frame)
+        return False
+
+    def in_temporary_frame(self):
+        return self.value in program.temporary_frame
+
+    def is_var(self):
+        return self.type == "var"
+
+    def print_self(self):
+        print("   arg of type", self.type, "with value", self.value)
 
 
 class Instruction:
     def __init__(self, opcode, order_num):
-        self.opcode = opcode.upper()
-        self.order_num = order_num
-        self.arguments = []
+        self.opcode = opcode.upper()        # instruction name
+        self.order_num = order_num          # order of instruction in program
+        self.arguments = []                 # list of all arguments
 
     def __lt__(self, other):
         if self.order_num < other.order_num:
@@ -33,12 +58,6 @@ class Instruction:
             num = num + 1
 
 
-class Variable:
-    def __init__(self, var_type, var_value):
-        self.type = var_type
-        self.value = var_value
-
-
 class Interpret:
     def __init__(self):
         self.local_frames = []          # stack of local frames
@@ -55,15 +74,50 @@ class Interpret:
                 num = num + 1
 
 
-def move_to_variable(src, dst):
-    if not (dst in program.global_frame or any(dst in lf for lf in program.local_frames) or dst in program.temporary_frame):
-        # undefined variable
-        exit(22)
+def get_value_from_frame(var: Argument):
+    if var.in_global_frame():
+        return program.global_frame[var.value]
+    elif var.in_temporary_frame():
+        return program.temporary_frame[var.value]
+    elif var.in_local_frames():
+        frame = program.local_frames.pop()
+        ret = frame[var.value]
+        program.local_frames.append(frame)
+        return ret
+    else:
+        print("no variable of name", var.value, "defined in any frame")
+        exit(52)
+
+
+def set_value_to_any_frame(name, value):
+    dst = Argument("nil", name)
+    src = Argument("nil", value)
+    move_to_variable(dst, src)
+
+
+def move_to_variable(dst: Argument, src: Argument):
+    if dst.in_global_frame():
+        program.global_frame[dst.value] = src.value
+    elif dst.in_local_frames():
+        frame = program.local_frames.pop()
+        frame[dst.value] = src.value
+        program.local_frames.append(frame)
+    elif dst.in_temporary_frame():
+        program.temporary_frame[dst.value] = src.value
+    else:
+        print("no variable of name", dst.value, "defined in any frame")
+        exit(52)
+
+
+def get_operand(op: Argument):
+    if op.is_var():
+        return get_value_from_frame(op)
+    else:
+        return op.value
 
 
 def create_frame():
-    global temporary_frame
-    temporary_frame = {}
+    pass
 
 
 def push_frame():
@@ -74,8 +128,20 @@ def pop_frame():
     pass
 
 
-def define_variable(var: Variable):
-    pass
+def define_variable(var: Argument):
+    if not var.is_var():
+        exit(52)
+
+    if "GF" in var.value:
+        program.global_frame[var.value] = "nil"
+
+    if "LF" in var.value:
+        current_frame = program.local_frames.pop()
+        current_frame[var.value] = "nil"
+        program.local_frames.append(current_frame)
+
+    if "TF" in var.value:
+        program.temporary_frame[var.value] = "nil"
 
 
 def call_function(name):
@@ -86,87 +152,117 @@ def return_from_function():
     pass
 
 
-def push(var: Variable):
+def push(var: Argument):
     pass
 
 
-def pop(var: Variable):
+def pop(var: Argument):
     pass
 
 
-def addition(dst: Variable, var1: Variable, var2: Variable):
+def addition(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, int(num1) + int(num2))
+
+
+def subtraction(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, int(num1) - int(num2))
+
+
+def multiplication(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, int(num1) * int(num2))
+
+
+def division(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, int(int(num1) / int(num2)))
+
+
+def less_than(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, num1 < num2)
+
+
+def greater_than(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, num1 > num2)
+
+
+def equals(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, num1 == num2)
+
+
+def logical_and(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, num1 and num2)
+
+
+def logical_or(dst: Argument, var1: Argument, var2: Argument):
+    num1 = get_operand(var1)
+    num2 = get_operand(var2)
+
+    set_value_to_any_frame(dst.value, num1 or num2)
+
+
+def logical_not(dst: Argument, var: Argument):
+    num1 = get_operand(var)
+
+    set_value_to_any_frame(dst.value, not num1)
+
+
+def integer_to_char(dst: Argument, char: Argument):
     pass
 
 
-def subtraction(dst: Variable, var1: Variable, var2: Variable):
+def string_to_int(dst: Argument, string: Argument, position: Argument):
     pass
 
 
-def multiplication(dst: Variable, var1: Variable, var2: Variable):
+def read_input(dst: Argument, var_type):
     pass
 
 
-def division(dst: Variable, var1: Variable, var2: Variable):
+def write_output(string: Argument):
+    print("WRITE invoked, state of global frame:")
+    print(program.global_frame)
+
+
+def concatenate(dst: Argument, first_string: Argument, second_string: Argument):
     pass
 
 
-def less_than(dst: Variable, var1: Variable, var2: Variable):
+def string_length(dst: Argument, string: Argument):
     pass
 
 
-def greater_than(dst: Variable, var1: Variable, var2: Variable):
+def get_character(dst: Argument, var1: Argument, var2: Argument):
     pass
 
 
-def equals(dst: Variable, var1: Variable, var2: Variable):
+def set_character(dst: Argument, var1: Argument, var2: Argument):
     pass
 
 
-def logical_and(dst: Variable, var1: Variable, var2: Variable):
-    pass
-
-
-def logical_or(dst: Variable, var1: Variable, var2: Variable):
-    pass
-
-
-def logical_not(dst: Variable, var: Variable):
-    pass
-
-
-def integer_to_char(dst: Variable, char:Variable):
-    pass
-
-
-def string_to_int(dst: Variable, string: Variable, position: Variable):
-    pass
-
-
-def read_input(dst: Variable, var_type):
-    pass
-
-
-def write_output(string: Variable):
-    pass
-
-
-def concatenate(dst: Variable, first_string: Variable, second_string: Variable):
-    pass
-
-
-def string_length(dst: Variable, string: Variable):
-    pass
-
-
-def get_character(dst: Variable, var1: Variable, var2: Variable):
-    pass
-
-
-def set_character(dst: Variable, var1: Variable, var2: Variable):
-    pass
-
-
-def get_type(dst: Variable, queried_symbol):
+def get_type(dst: Argument, queried_symbol):
     pass
 
 
@@ -178,11 +274,11 @@ def jump(name):
     pass
 
 
-def jump_if_equal(name, var1: Variable, var2: Variable):
+def jump_if_equal(name, var1: Argument, var2: Argument):
     pass
 
 
-def jump_if_not_equal(name, var1: Variable, var2: Variable):
+def jump_if_not_equal(name, var1: Argument, var2: Argument):
     pass
 
 
@@ -190,7 +286,7 @@ def exit_program(error_code):
     pass
 
 
-def debug_print(var: Variable):
+def debug_print(var: Argument):
     pass
 
 
@@ -356,7 +452,6 @@ for child in root:
     program.instructions.insert(int(current_instruction.order_num), current_instruction)
 
 program.instructions.sort()
-# program.print_self()
 
 for inst in program.instructions:
     interpret(inst)
