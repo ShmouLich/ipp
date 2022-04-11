@@ -70,6 +70,25 @@ class Interpret:
         self.data_stack = []
 
     def print_self(self):
+        print("current PC:", self.program_counter)
+
+        print("local frames stack:")
+        for frame in self.local_frames:
+            print(frame)
+
+        print("temporary frames stack:")
+        print(self.temporary_frame)
+
+        print("global frames stack:")
+        print(self.global_frame)
+
+        print("labels:")
+        print(self.labels)
+
+        print("data stack:")
+        print(self.data_stack)
+
+        print("all instructions:")
         for instruction in self.instructions:
             print("instruction name:", instruction.opcode, "position:", instruction.order_num)
             num = 1
@@ -86,6 +105,21 @@ def get_value_from_frame(var: Argument):
     elif var.in_local_frames():
         frame = program.local_frames.pop()
         ret = frame[var.value]
+        program.local_frames.append(frame)
+        return ret
+    else:
+        print("no variable of name", var.value, "defined in any frame")
+        exit(52)
+
+
+def get_type_from_frame(var: Argument):
+    if var.in_global_frame():
+        return program.global_frame[var.value].type
+    elif var.in_temporary_frame():
+        return program.temporary_frame[var.value].type
+    elif var.in_local_frames():
+        frame = program.local_frames.pop()
+        ret = frame[var.value].type
         program.local_frames.append(frame)
         return ret
     else:
@@ -282,7 +316,7 @@ def string_to_int(dst: Argument, string: Argument, position: Argument):
     offset = get_operand(position)
 
     try:
-        dst.value = string_value[offset]
+        dst.value = ord(string_value[offset])
         dst.type = "int"
     except IndexError:
         exit(58)
@@ -329,40 +363,65 @@ def string_length(dst: Argument, string: Argument):
     dst.type = "int"
 
 
-def get_character(dst: Argument, var1: Argument, var2: Argument):
-    pass
+def get_character(dst: Argument, string: Argument, position: Argument):
+    string_value = get_operand(string)
+    offset = get_operand(position)
+
+    try:
+        dst.value = string_value[offset]
+        dst.type = "string"
+    except IndexError:
+        exit(58)
 
 
-def set_character(dst: Argument, var1: Argument, var2: Argument):
-    pass
+def set_character(dst: Argument, string: Argument, position: Argument):
+    string_value = get_operand(string)
+    offset = get_operand(position)
+
+    try:
+        dst.value[offset] = string_value
+        dst.type = "string"
+    except IndexError:
+        exit(58)
 
 
 def get_type(dst: Argument, queried_symbol):
-    pass
+    if queried_symbol.type == "var":
+        dst.value = str(get_type_from_frame(queried_symbol))
+    else:
+        dst.value = queried_symbol.type
+
+    dst.type = "string"
 
 
 def jump(name):
-    pass
+    if name in program.labels:
+        program.program_counter = program.labels[name] - 1
 
 
 def jump_if_equal(name, var1: Argument, var2: Argument):
-    pass
+    if var1.type == var2.type and var1.value == var2.value:
+        jump(name)
 
 
 def jump_if_not_equal(name, var1: Argument, var2: Argument):
-    pass
+    if not (var1.type == var2.type and var1.value == var2.value):
+        jump(name)
 
 
 def exit_program(error_code):
-    pass
+    if error_code < 0 or error_code > 49:
+        exit(57)
+    else:
+        exit(error_code)
 
 
 def debug_print(var: Argument):
-    pass
+    print(var.value)
 
 
 def state_print():
-    pass
+    program.print_self()
 
 
 def interpret(command: Instruction):
@@ -530,5 +589,3 @@ program.instructions.sort()
 while program.program_counter < len(program.instructions):
     interpret(program.instructions[program.program_counter])
     program.program_counter += 1
-
-print(program.labels)
