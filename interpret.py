@@ -6,8 +6,8 @@ import xml.etree.ElementTree as et
 # classes
 class Argument:
     def __init__(self, arg_type, arg_value):
-        self.type = arg_type                # var, int, string, nil
-        self.value = arg_value              # for type 'var' contains name of variable, for others contains value
+        self.type = arg_type  # var, int, string, nil
+        self.value = arg_value  # for type 'var' contains name of variable, for others contains value
 
     def in_global_frame(self):
         return self.value in program.global_frame
@@ -37,9 +37,9 @@ class Argument:
 
 class Instruction:
     def __init__(self, opcode, order_num):
-        self.opcode = opcode.upper()        # instruction name
-        self.order_num = order_num          # order of instruction in program
-        self.arguments = []                 # list of all arguments
+        self.opcode = opcode.upper()  # instruction name
+        self.order_num = order_num  # order of instruction in program
+        self.arguments = []  # list of all arguments
 
     def __lt__(self, other):
         if self.order_num < other.order_num:
@@ -60,10 +60,14 @@ class Instruction:
 
 class Interpret:
     def __init__(self):
-        self.local_frames = []          # stack of local frames
+        self.local_frames = []  # stack of local frames
         self.temporary_frame = {}
         self.global_frame = {}
-        self.instructions = []          # list of instructions
+        self.instructions = []  # list of instructions
+        self.labels = {}
+        self.program_counter = 0
+        self.calls = []
+        self.data_stack = []
 
     def print_self(self):
         for instruction in self.instructions:
@@ -95,6 +99,24 @@ def set_value_to_any_frame(name, value):
     move_to_variable(dst, src)
 
 
+def get_operand(op: Argument):
+    if op.is_var():
+        return get_value_from_frame(op)
+    else:
+        return op.value
+
+
+def save_label(instruction):
+    label = instruction.arguments.pop()
+    label_name = label.value
+    instruction.arguments.append(label)
+
+    program.labels[label_name] = int(instruction.order_num)
+
+
+# IPPCODE22 functions
+
+
 def move_to_variable(dst: Argument, src: Argument):
     if dst.in_global_frame():
         program.global_frame[dst.value] = src.value
@@ -109,23 +131,19 @@ def move_to_variable(dst: Argument, src: Argument):
         exit(52)
 
 
-def get_operand(op: Argument):
-    if op.is_var():
-        return get_value_from_frame(op)
-    else:
-        return op.value
-
-
 def create_frame():
-    pass
+    program.temporary_frame = {}
 
 
 def push_frame():
-    pass
+    program.local_frames.append(program.temporary_frame)
 
 
 def pop_frame():
-    pass
+    if len(program.local_frames) == 0:
+        exit(55)
+
+    program.temporary_frame = program.local_frames.pop()
 
 
 def define_variable(var: Argument):
@@ -145,19 +163,31 @@ def define_variable(var: Argument):
 
 
 def call_function(name):
-    pass
+    if name not in program.labels:
+        exit(22)
+
+    program.calls.append(program.program_counter)
+    program.program_counter = program.labels[name]
 
 
 def return_from_function():
-    pass
+    if len(program.calls) == 0:
+        exit(56)
+
+    program.program_counter = program.calls.pop()
 
 
 def push(var: Argument):
-    pass
+    program.data_stack.append(var)
 
 
 def pop(var: Argument):
-    pass
+    if len(program.data_stack) == 0:
+        exit(56)
+
+    popped = program.data_stack.pop()
+    var.value = popped.value
+    var.type = popped.type
 
 
 def addition(dst: Argument, var1: Argument, var2: Argument):
@@ -165,6 +195,7 @@ def addition(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, int(num1) + int(num2))
+    dst.type = "int"
 
 
 def subtraction(dst: Argument, var1: Argument, var2: Argument):
@@ -172,6 +203,7 @@ def subtraction(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, int(num1) - int(num2))
+    dst.type = "int"
 
 
 def multiplication(dst: Argument, var1: Argument, var2: Argument):
@@ -179,6 +211,7 @@ def multiplication(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, int(num1) * int(num2))
+    dst.type = "int"
 
 
 def division(dst: Argument, var1: Argument, var2: Argument):
@@ -186,6 +219,7 @@ def division(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, int(int(num1) / int(num2)))
+    dst.type = "int"
 
 
 def less_than(dst: Argument, var1: Argument, var2: Argument):
@@ -193,6 +227,7 @@ def less_than(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, num1 < num2)
+    dst.type = "bool"
 
 
 def greater_than(dst: Argument, var1: Argument, var2: Argument):
@@ -200,6 +235,7 @@ def greater_than(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, num1 > num2)
+    dst.type = "bool"
 
 
 def equals(dst: Argument, var1: Argument, var2: Argument):
@@ -207,6 +243,7 @@ def equals(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, num1 == num2)
+    dst.type = "bool"
 
 
 def logical_and(dst: Argument, var1: Argument, var2: Argument):
@@ -214,6 +251,7 @@ def logical_and(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, num1 and num2)
+    dst.type = "bool"
 
 
 def logical_or(dst: Argument, var1: Argument, var2: Argument):
@@ -221,37 +259,74 @@ def logical_or(dst: Argument, var1: Argument, var2: Argument):
     num2 = get_operand(var2)
 
     set_value_to_any_frame(dst.value, num1 or num2)
+    dst.type = "bool"
 
 
 def logical_not(dst: Argument, var: Argument):
     num1 = get_operand(var)
 
     set_value_to_any_frame(dst.value, not num1)
+    dst.type = "bool"
 
 
 def integer_to_char(dst: Argument, char: Argument):
-    pass
+    try:
+        dst.value = chr(get_operand(char))
+        dst.type = "str"
+    except ValueError:
+        exit(58)
 
 
 def string_to_int(dst: Argument, string: Argument, position: Argument):
-    pass
+    string_value = get_operand(string)
+    offset = get_operand(position)
+
+    try:
+        dst.value = string_value[offset]
+        dst.type = "int"
+    except IndexError:
+        exit(58)
 
 
 def read_input(dst: Argument, var_type):
-    pass
+    user_in = input()
+
+    if var_type == "string":
+        user_in = str(user_in)
+        dst.type = "string"
+    elif var_type == "int":
+        user_in = int(user_in)
+        dst.type = "int"
+    elif var_type == "bool":
+        if user_in.upper() == "TRUE":
+            user_in = True
+        else:
+            user_in = False
+        dst.type = "bool"
+    else:
+        user_in = "nil"
+        dst.type = "nil"
+
+    dst.value = user_in
 
 
 def write_output(string: Argument):
-    print("WRITE invoked, state of global frame:")
-    print(program.global_frame)
+    print(get_value_from_frame(string))
 
 
 def concatenate(dst: Argument, first_string: Argument, second_string: Argument):
-    pass
+    str1 = get_operand(first_string)
+    str2 = get_operand(second_string)
+
+    set_value_to_any_frame(dst.value, str(str1) + str(str2))
+    dst.type = "str"
 
 
 def string_length(dst: Argument, string: Argument):
-    pass
+    length = len(get_operand(string))
+
+    set_value_to_any_frame(dst.value, length)
+    dst.type = "int"
 
 
 def get_character(dst: Argument, var1: Argument, var2: Argument):
@@ -263,10 +338,6 @@ def set_character(dst: Argument, var1: Argument, var2: Argument):
 
 
 def get_type(dst: Argument, queried_symbol):
-    pass
-
-
-def label(name):
     pass
 
 
@@ -380,7 +451,7 @@ def interpret(command: Instruction):
         get_type(command.arguments[0], command.arguments[1])
 
     elif command.opcode == "LABEL":
-        label(command.arguments[0])
+        pass
 
     elif command.opcode == "JUMP":
         jump(command.arguments[0])
@@ -451,7 +522,13 @@ for child in root:
 
     program.instructions.insert(int(current_instruction.order_num), current_instruction)
 
+    if current_instruction.opcode == "LABEL":
+        save_label(current_instruction)
+
 program.instructions.sort()
 
-for inst in program.instructions:
-    interpret(inst)
+while program.program_counter < len(program.instructions):
+    interpret(program.instructions[program.program_counter])
+    program.program_counter += 1
+
+print(program.labels)
