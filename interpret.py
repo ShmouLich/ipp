@@ -655,18 +655,26 @@ def interpret(command: Instruction):
 
 def main():
     # argument parsing
-    help_string = "interprets xml representation of IPPcode22\n" \
-                "usage: interpret.py\n" \
-                "options:\n" \
-                "--source=file file with xml representation of sourcecode\n" \
-                "--input=file  file with inputs for sourcecode"
+    # if "--help" in sys.argv:
+    #       print("interprets xml representation of IPPcode22\n"
+    #           "usage: interpret.py\n"
+    #           "options:\n"
+    #           "--source=file file with xml representation of sourcecode\n"
+    #           "--input=file  file with inputs for sourcecode")
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', metavar="FILE", type=str)
     parser.add_argument('--input', metavar="FILE", type=str)
     args = parser.parse_args()
 
-    tree = et.parse(args.source)
+    if args.source is None and args.input is None:
+        exit(10)
+
+    try:
+        tree = et.parse(args.source)
+    except et.ParseError:
+        exit(10)
+
     root = tree.getroot()
 
     check_xml(root)
