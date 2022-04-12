@@ -4,6 +4,7 @@ import xml.etree.ElementTree as et
 
 
 # classes
+
 class Argument:
     def __init__(self, arg_type, arg_value):
         self.type = arg_type  # var, int, string, nil
@@ -50,6 +51,16 @@ class Instruction:
     def append_argument(self, argument_type, value):
         self.arguments.append(Argument(argument_type, value))
 
+    def check_order_num(self):
+        if int(self.order_num) < 1:
+            exit(32)
+
+        try:
+            tmp = program.instructions[int(self.order_num)]
+            exit(32)
+        except IndexError:
+            pass
+
     def print_self(self):
         print("instruction name:", self.opcode)
         num = 1
@@ -65,6 +76,7 @@ class Interpret:
         self.global_frame = {}
         self.instructions = []  # list of instructions
         self.labels = {}
+        self.used_labels = {}
         self.program_counter = 0
         self.calls = []
         self.data_stack = []
@@ -95,6 +107,63 @@ class Interpret:
             for i in instruction.arguments:
                 print("   arg no.", num, ":", i.type, i.value)
                 num = num + 1
+
+    def save_label(self, instruction):
+        label = instruction.arguments.pop()
+        label_name = label.value
+        instruction.arguments.append(label)
+
+        self.labels[label_name] = int(instruction.order_num)
+
+    def save_used_label(self, instruction):
+        label = instruction.arguments.pop()
+        label_name = label.value
+        instruction.arguments.append(label)
+
+        self.used_labels[label_name] = int(instruction.order_num)
+
+    def check_labels(self):
+        for label in self.used_labels:
+            if label not in self.labels:
+                exit(56)
+
+
+# auxiliary functions
+
+
+def check_xml(root):
+    if root.tag != "program":
+        exit(31)
+
+    for child in root:
+        if child.tag != "instruction":
+            exit(31)
+
+        attributes = list(child.attrib.keys())
+        if not ("order" in attributes) or not ("opcode" in attributes):
+            exit(31)
+
+        for sub_element in child:
+            if not (re.match(r"arg[123]", sub_element.tag)):
+                exit(31)
+
+
+def load_instructions(root):
+    for child in root:
+        current_instruction = Instruction(child.attrib["opcode"], child.attrib["order"])
+
+        for args in child:
+            current_instruction.append_argument(args.attrib["type"], args.text)
+
+        program.instructions.insert(int(current_instruction.order_num), current_instruction)
+
+        current_instruction.check_order_num()
+
+        if current_instruction.opcode == "LABEL":
+            program.save_label(current_instruction)
+
+        if current_instruction.opcode in ["JUMP", "JUMPIFEQ", "JUMPIFNEQ"]:
+            program.save_used_label(current_instruction)
 
 
 def get_value_from_frame(var: Argument):
@@ -140,26 +209,20 @@ def get_operand(op: Argument):
         return op.value
 
 
-def save_label(instruction):
-    label = instruction.arguments.pop()
-    label_name = label.value
-    instruction.arguments.append(label)
-
-    program.labels[label_name] = int(instruction.order_num)
-
-
 # IPPCODE22 functions
-
 
 def move_to_variable(dst: Argument, src: Argument):
     if dst.in_global_frame():
         program.global_frame[dst.value] = src.value
+        program.global_frame[dst.type] = src.type
     elif dst.in_local_frames():
         frame = program.local_frames.pop()
         frame[dst.value] = src.value
+        frame[dst.type] = src.type
         program.local_frames.append(frame)
     elif dst.in_temporary_frame():
         program.temporary_frame[dst.value] = src.value
+        program.temporary_frame[dst.type] = src.type
     else:
         print("no variable of name", dst.value, "defined in any frame")
         exit(52)
@@ -185,20 +248,26 @@ def define_variable(var: Argument):
         exit(52)
 
     if "GF" in var.value:
+        if var.in_global_frame():
+            exit(52)
         program.global_frame[var.value] = "nil"
 
     if "LF" in var.value:
+        if var.in_local_frames():
+            exit(52)
         current_frame = program.local_frames.pop()
         current_frame[var.value] = "nil"
         program.local_frames.append(current_frame)
 
     if "TF" in var.value:
+        if var.in_temporary_frame():
+            exit(52)
         program.temporary_frame[var.value] = "nil"
 
 
 def call_function(name):
     if name not in program.labels:
-        exit(22)
+        exit(56)
 
     program.calls.append(program.program_counter)
     program.program_counter = program.labels[name]
@@ -228,7 +297,11 @@ def addition(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, int(num1) + int(num2))
+    try:
+        set_value_to_any_frame(dst.value, int(num1) + int(num2))
+    except ValueError:
+        exit(53)
+
     dst.type = "int"
 
 
@@ -236,7 +309,11 @@ def subtraction(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, int(num1) - int(num2))
+    try:
+        set_value_to_any_frame(dst.value, int(num1) - int(num2))
+    except ValueError:
+        exit(53)
+
     dst.type = "int"
 
 
@@ -244,15 +321,26 @@ def multiplication(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, int(num1) * int(num2))
+    try:
+        set_value_to_any_frame(dst.value, int(num1) * int(num2))
+    except ValueError:
+        exit(53)
+
     dst.type = "int"
 
 
 def division(dst: Argument, var1: Argument, var2: Argument):
-    num1 = get_operand(var1)
-    num2 = get_operand(var2)
+    num1 = int(get_operand(var1))
+    num2 = int(get_operand(var2))
 
-    set_value_to_any_frame(dst.value, int(int(num1) / int(num2)))
+    if num2 == 0:
+        exit(57)
+
+    try:
+        set_value_to_any_frame(dst.value, int(num1 / num2))
+    except ValueError:
+        exit(53)
+
     dst.type = "int"
 
 
@@ -260,7 +348,10 @@ def less_than(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, num1 < num2)
+    try:
+        set_value_to_any_frame(dst.value, num1 < num2)
+    except TypeError:
+        exit(53)
     dst.type = "bool"
 
 
@@ -268,7 +359,11 @@ def greater_than(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, num1 > num2)
+    try:
+        set_value_to_any_frame(dst.value, num1 > num2)
+    except TypeError:
+        exit(53)
+
     dst.type = "bool"
 
 
@@ -276,7 +371,11 @@ def equals(dst: Argument, var1: Argument, var2: Argument):
     num1 = get_operand(var1)
     num2 = get_operand(var2)
 
-    set_value_to_any_frame(dst.value, num1 == num2)
+    try:
+        set_value_to_any_frame(dst.value, num1 == num2)
+    except TypeError:
+        exit(53)
+
     dst.type = "bool"
 
 
@@ -329,6 +428,8 @@ def read_input(dst: Argument, var_type):
         user_in = str(user_in)
         dst.type = "string"
     elif var_type == "int":
+        if not user_in.isnumeric():
+            exit(53)
         user_in = int(user_in)
         dst.type = "int"
     elif var_type == "bool":
@@ -352,12 +453,18 @@ def concatenate(dst: Argument, first_string: Argument, second_string: Argument):
     str1 = get_operand(first_string)
     str2 = get_operand(second_string)
 
+    if first_string.type != "string" or second_string.type != "string":
+        exit(58)
+
     set_value_to_any_frame(dst.value, str(str1) + str(str2))
     dst.type = "str"
 
 
 def string_length(dst: Argument, string: Argument):
     length = len(get_operand(string))
+
+    if string.type != "string":
+        exit(58)
 
     set_value_to_any_frame(dst.value, length)
     dst.type = "int"
@@ -422,6 +529,15 @@ def debug_print(var: Argument):
 
 def state_print():
     program.print_self()
+
+
+# interpreting functions
+
+def go_through_all_instructions():
+    while program.program_counter < len(program.instructions):
+        interpret(program.instructions[program.program_counter])
+
+        program.program_counter += 1
 
 
 def interpret(command: Instruction):
@@ -532,60 +648,35 @@ def interpret(command: Instruction):
 
     else:
         # unknown instruction
-        exit(22)
+        exit(32)
 
 
-# argument parsing
-helpString = "interprets xml representation of IPPcode22\n" \
-             "usage: interpret.py\n" \
-             "options:\n" \
-             "--source=file file with xml representation of sourcecode\n" \
-             "--input=file  file with inputs for sourcecode"
+# main function
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--source', metavar="FILE", type=str)
-parser.add_argument('--input', metavar="FILE", type=str)
-args = parser.parse_args()
+def main():
+    # argument parsing
+    help_string = "interprets xml representation of IPPcode22\n" \
+                "usage: interpret.py\n" \
+                "options:\n" \
+                "--source=file file with xml representation of sourcecode\n" \
+                "--input=file  file with inputs for sourcecode"
 
-file = open(args.source, 'r')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', metavar="FILE", type=str)
+    parser.add_argument('--input', metavar="FILE", type=str)
+    args = parser.parse_args()
 
-tree = et.parse(args.source)
-root = tree.getroot()
+    tree = et.parse(args.source)
+    root = tree.getroot()
 
-# check xml
+    check_xml(root)
 
-if root.tag != "program":
-    print("error 22\n")
-    exit(22)
+    load_instructions(root)
 
-for child in root:
-    if child.tag != "instruction":
-        print("error 22\n")
-        exit(22)
+    program.instructions.sort()
 
-    attributes = list(child.attrib.keys())
-    if not ("order" in attributes) or not ("opcode" in attributes):
-        exit(22)
+    go_through_all_instructions()
 
-    for sub_element in child:
-        if not (re.match(r"arg[123]", sub_element.tag)):
-            exit(22)
 
 program = Interpret()
-
-for child in root:
-    current_instruction = Instruction(child.attrib["opcode"], child.attrib["order"])
-
-    for args in child:
-        current_instruction.append_argument(args.attrib["type"], args.text)
-
-    program.instructions.insert(int(current_instruction.order_num), current_instruction)
-
-    if current_instruction.opcode == "LABEL":
-        save_label(current_instruction)
-
-program.instructions.sort()
-
-while program.program_counter < len(program.instructions):
-    interpret(program.instructions[program.program_counter])
-    program.program_counter += 1
+main()
