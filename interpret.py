@@ -1,3 +1,4 @@
+import sys
 import argparse
 import re
 import xml.etree.ElementTree as et
@@ -148,6 +149,13 @@ def check_xml(root):
                 exit(31)
 
 
+def try_parse(src_input):
+    try:
+        return et.parse(src_input)
+    except et.ParseError:
+        exit(10)
+
+
 def load_instructions(root):
     for child in root:
         current_instruction = Instruction(child.attrib["opcode"], child.attrib["order"])
@@ -210,6 +218,7 @@ def get_operand(op: Argument):
 
 
 # IPPCODE22 functions
+# are called in dependence on current IPPcode22 instruction being interpreted
 
 def move_to_variable(dst: Argument, src: Argument):
     if dst.in_global_frame():
@@ -655,12 +664,6 @@ def interpret(command: Instruction):
 
 def main():
     # argument parsing
-    # if "--help" in sys.argv:
-    #       print("interprets xml representation of IPPcode22\n"
-    #           "usage: interpret.py\n"
-    #           "options:\n"
-    #           "--source=file file with xml representation of sourcecode\n"
-    #           "--input=file  file with inputs for sourcecode")
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', metavar="FILE", type=str)
@@ -670,10 +673,10 @@ def main():
     if args.source is None and args.input is None:
         exit(10)
 
-    try:
-        tree = et.parse(args.source)
-    except et.ParseError:
-        exit(10)
+    if args.source is None:
+        tree = try_parse(sys.stdin)
+    else:
+        tree = try_parse(args.source)
 
     root = tree.getroot()
 
