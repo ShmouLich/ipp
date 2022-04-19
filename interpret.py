@@ -156,6 +156,23 @@ def try_parse(src_input):
         exit(10)
 
 
+def get_input_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', metavar="FILE", type=str)
+    parser.add_argument('--input', metavar="FILE", type=str)
+    return parser.parse_args()
+
+
+def determine_input(args):
+    if args.source is None and args.input is None:
+        exit(10)
+
+    if args.source is None:
+        return try_parse(sys.stdin)
+    else:
+        return try_parse(args.source)
+
+
 def load_instructions(root):
     for child in root:
         current_instruction = Instruction(child.attrib["opcode"], child.attrib["order"])
@@ -218,7 +235,6 @@ def get_operand(op: Argument):
 
 
 # IPPCODE22 functions
-# are called in dependence on current IPPcode22 instruction being interpreted
 
 def move_to_variable(dst: Argument, src: Argument):
     if dst.in_global_frame():
@@ -544,6 +560,7 @@ def state_print():
 
 def go_through_all_instructions():
     while program.program_counter < len(program.instructions):
+
         interpret(program.instructions[program.program_counter])
 
         program.program_counter += 1
@@ -663,20 +680,9 @@ def interpret(command: Instruction):
 # main function
 
 def main():
-    # argument parsing
+    args = get_input_args()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--source', metavar="FILE", type=str)
-    parser.add_argument('--input', metavar="FILE", type=str)
-    args = parser.parse_args()
-
-    if args.source is None and args.input is None:
-        exit(10)
-
-    if args.source is None:
-        tree = try_parse(sys.stdin)
-    else:
-        tree = try_parse(args.source)
+    tree = determine_input(args)
 
     root = tree.getroot()
 
